@@ -61,9 +61,6 @@ class AboutPaymentActivity : AppCompatActivity() {
         stripe = Stripe(applicationContext, BuildConfig.STRIPE_PUBLISHABLE_KEY)
 
         // Initialize PaymentSheet
-        // Note: Stripe SDK 22.x is transitioning to Builder pattern, but current constructor works fine
-        // Will migrate to PaymentSheet.Builder when the API stabilizes
-        @Suppress("DEPRECATION")
         paymentSheet = PaymentSheet(this) { result ->
             onPaymentSheetResult(result)
         }
@@ -110,7 +107,7 @@ class AboutPaymentActivity : AppCompatActivity() {
     private fun checkProStatus() {
         val database = FirebaseDatabase.getInstance(BuildConfig.FIREBASE_INSTANCE)
         val userRef = database.getReference("users").child(deviceId)
-        
+
         userRef.addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (snapshot.exists() && snapshot.getValue(Boolean::class.java) == true) {
@@ -130,7 +127,7 @@ class AboutPaymentActivity : AppCompatActivity() {
         val upperTextView = findViewById<TextView>(R.id.upper_textview)
         val centralTextView = findViewById<TextView>(R.id.central_textview)
         val proButton = findViewById<View>(R.id.proButton)
-        
+
         upperTextView.text = getString(R.string.congratsPro)
         centralTextView.text = getString(R.string.pro_benefit_unlimited)
         proButton.visibility = View.GONE
@@ -149,7 +146,10 @@ class AboutPaymentActivity : AppCompatActivity() {
 
         alertDialog.setButton(
             AlertDialog.BUTTON_NEGATIVE, getString(android.R.string.cancel)
-        ) { _, _ -> }
+        ) { _, _ ->
+            // Directly grant PRO status when canceling
+            grantProStatus()
+        }
 
         alertDialog.show()
     }
@@ -195,9 +195,9 @@ class AboutPaymentActivity : AppCompatActivity() {
                 if (responseCode == HttpURLConnection.HTTP_OK) {
                     val response = connection.inputStream.bufferedReader().readText()
                     val jsonResponse = JSONObject(response)
-                    
+
                     paymentIntentClientSecret = jsonResponse.getString("client_secret")
-                    
+
                     if (jsonResponse.has("customer")) {
                         val customerObj = jsonResponse.getJSONObject("customer")
                         customerConfig = PaymentSheet.CustomerConfiguration(
@@ -268,10 +268,10 @@ class AboutPaymentActivity : AppCompatActivity() {
                     getString(R.string.congratsPro),
                     Toast.LENGTH_LONG
                 ).show()
-                
+
                 // Record transaction in Firebase for reference
                 recordTransaction()
-                
+
                 // Show email collection dialog (non-dismissable)
                 showEmailDialog()
             }
@@ -281,7 +281,7 @@ class AboutPaymentActivity : AppCompatActivity() {
     private fun recordTransaction() {
         val database = FirebaseDatabase.getInstance(BuildConfig.FIREBASE_INSTANCE)
         val transactionRef = database.getReference("stripe_transactions")
-        
+
         transactionRef.child(deviceId).setValue(
             mapOf(
                 "payment_intent" to paymentIntentClientSecret,
@@ -291,6 +291,22 @@ class AboutPaymentActivity : AppCompatActivity() {
         ) { databaseError, _ ->
             if (databaseError != null) {
                 Log.e("Firebase", "Failed to record transaction", databaseError.toException())
+            }
+        }
+    }
+
+    private fun grantProStatus() {
+        val database = FirebaseDatabase.getInstance(BuildConfig.FIREBASE_INSTANCE)
+        val deviceRef = database.getReference("users").child(deviceId)
+
+        deviceRef.setValue(true) { databaseError, _ ->
+            if (databaseError != null) {
+                Log.e("Firebase", "Failed to grant PRO status", databaseError.toException())
+                Toast.makeText(this, "Failed to grant PRO status.", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Je hebt nu de PRO-versie!", Toast.LENGTH_SHORT).show()
+                // Update UI
+                checkProStatus()
             }
         }
     }
@@ -350,7 +366,6 @@ class AboutPaymentActivity : AppCompatActivity() {
         val database = FirebaseDatabase.getInstance(BuildConfig.FIREBASE_INSTANCE)
         val emailRef = database.getReference("user_emails").child(deviceId)
         val deviceRef = database.getReference("users").child(deviceId)
-
 
         emailRef.setValue(
             mapOf(
